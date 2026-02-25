@@ -13,19 +13,25 @@ from app.models import Base, User, WorkingDay
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-
 app = FastAPI()
 
 
+# -------------------------
+# DATABASE INIT
+# -------------------------
 @app.on_event("startup")
 async def on_startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
+# -------------------------
+# START
+# -------------------------
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
     async with AsyncSessionLocal() as session:
@@ -45,11 +51,13 @@ async def start_handler(message: Message):
     await message.answer("Бот работает ✅ Пользователь сохранён в базе.")
 
 
+# -------------------------
+# ADD WORKING DAY (ADMIN)
+# -------------------------
 @dp.message(F.text.startswith("/add_day"))
 async def add_working_day(message: Message):
-    admin_id = int(os.getenv("ADMIN_ID"))
 
-    if message.from_user.id != admin_id:
+    if message.from_user.id != ADMIN_ID:
         await message.answer("Нет доступа.")
         return
 
@@ -85,6 +93,36 @@ async def add_working_day(message: Message):
         await message.answer("Формат: /add_day 2026-03-25 10:00 18:00")
 
 
+# -------------------------
+# LIST WORKING DAYS (ADMIN)
+# -------------------------
+@dp.message(F.text == "/days")
+async def list_working_days(message: Message):
+
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Нет доступа.")
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(WorkingDay).order_by(WorkingDay.date)
+        )
+        days = result.scalars().all()
+
+        if not days:
+            await message.answer("Рабочих дней пока нет.")
+            return
+
+        text = "Рабочие дни:\n\n"
+        for day in days:
+            text += f"{day.date} {day.start_time} - {day.end_time}\n"
+
+        await message.answer(text)
+
+
+# -------------------------
+# WEBHOOK
+# -------------------------
 @app.post("/webhook")
 async def webhook(request: Request):
     update = Update.model_validate(await request.json(), context={"bot": bot})
@@ -92,6 +130,9 @@ async def webhook(request: Request):
     return {"ok": True}
 
 
+# -------------------------
+# ROOT CHECK
+# -------------------------
 @app.get("/")
 async def root():
     return {"status": "Bot is running"}
