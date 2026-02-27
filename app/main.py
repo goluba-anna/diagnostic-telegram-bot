@@ -1,32 +1,40 @@
 import os
+import uuid
+import asyncio
 from datetime import datetime, timedelta
 
 from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Update, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
+from dotenv import load_dotenv
 from sqlalchemy import select
 
 from app.database import engine, AsyncSessionLocal
 from app.models import Base, User, Booking
 
-# ---------------- ENV ----------------
+load_dotenv()
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+
+# Юкасса пока не подключаем
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
+PAYMENT_RETURN_URL = os.getenv("PAYMENT_RETURN_URL", "https://t.me/ТВОЙ_БОТ")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 app = FastAPI()
 
 
-# ---------------- STARTUP ----------------
 @app.on_event("startup")
 async def on_startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
-# ---------------- /start ----------------
+# ---------------- START ----------------
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -64,43 +72,31 @@ async def create_booking(callback):
         await session.commit()
         await session.refresh(booking)
 
-        # Временно без Юкасса
+        # ---------------- Информация о брони ----------------
         await callback.message.answer(
             "Бронь создана. Оплата будет доступна после подключения Юкасса."
         )
 
+    # ---------------- Таймер 15 минут ----------------
+    async def cancel_booking_if_not_paid(booking_id: int):
+        await asyncio.sleep(900)  # 15 минут
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Booking).where(Booking.id == booking_id)
+            )
+            booking_to_check = result.scalar_one_or_none()
+            if booking_to_check and booking_to_check.status == "pending":
+                booking_to_check.status = "cancelled"
+                await session.commit()
+                try:
+                    await bot.send_message(
+                        booking_to_check.user.telegram_id,
+                        "Время на оплату истекло ⏰ Ваша бронь была отменена."
+                    )
+                except:
+                    pass
 
-# ---------------- YOOKASSA PAYMENT ----------------
-# Этот блок закомментирован до подписания договора с Юкасса
-# from yookassa import Payment, Configuration
-# import uuid
-#
-# YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
-# YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
-# PAYMENT_RETURN_URL = "https://t.me/ТВОЙ_БОТ"  # замени на ссылку своего бота
-#
-# Configuration.account_id = YOOKASSA_SHOP_ID
-# Configuration.secret_key = YOOKASSA_SECRET_KEY
-#
-# def create_yookassa_payment(booking_id: int, amount: int):
-#     payment = Payment.create({
-#         "amount": {
-#             "value": str(amount),
-#             "currency": "RUB"
-#         },
-#         "confirmation": {
-#             "type": "redirect",
-#             "return_url": PAYMENT_RETURN_URL
-#         },
-#         "capture": True,
-#         "description": f"Booking #{booking_id}"
-#     }, str(uuid.uuid4()))
-#
-#     if not hasattr(payment, "confirmation"):
-#         print("YOOKASSA ERROR:", payment)
-#         raise Exception("Ошибка создания платежа")
-#
-#     return payment.confirmation.confirmation_url
+    asyncio.create_task(cancel_booking_if_not_paid(booking.id))
 
 
 # ---------------- TELEGRAM WEBHOOK ----------------
@@ -111,7 +107,6 @@ async def webhook(request: Request):
     return {"ok": True}
 
 
-# ---------------- ROOT ----------------
 @app.get("/")
 async def root():
     return {"status": "Bot is running"}
