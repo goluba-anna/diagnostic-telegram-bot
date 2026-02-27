@@ -1,67 +1,40 @@
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    BigInteger,
-    DateTime,
-    Date,
-    Time,
-    Boolean,
-    ForeignKey
-)
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy import Column, Integer, String, Date, Time, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from datetime import datetime
-
-Base = declarative_base()
+from app.database import Base
 
 
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(BigInteger, unique=True)
+    telegram_id = Column(Integer, unique=True)
     username = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+
+    bookings = relationship("Booking", back_populates="user")
 
 
 class WorkingDay(Base):
     __tablename__ = "working_days"
 
     id = Column(Integer, primary_key=True)
-    date = Column(Date, unique=True)
-    start_time = Column(Time)
-    end_time = Column(Time)
-    is_active = Column(Boolean, default=True)
-
-
-class Appointment(Base):
-    __tablename__ = "appointments"
-
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
     date = Column(Date)
     start_time = Column(Time)
-    duration_minutes = Column(Integer)
-    status = Column(String, default="pending")  # pending, paid, cancelled
-    created_at = Column(DateTime, default=datetime.utcnow)
+    end_time = Column(Time)
 
 
-class Payment(Base):
-    __tablename__ = "payments"
+class Booking(Base):
+    __tablename__ = "bookings"
 
     id = Column(Integer, primary_key=True)
+
     user_id = Column(Integer, ForeignKey("users.id"))
-    tariff = Column(String)
-    amount = Column(Integer)
+
+    date = Column(Date)
+    start_time = Column(Time)
+    end_time = Column(Time)
+
     status = Column(String, default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)
 
-
-class DiagnosticAnswer(Base):
-    __tablename__ = "diagnostic_answers"
-
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    question = Column(String)
-    answer = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    user = relationship("User", back_populates="bookings")
