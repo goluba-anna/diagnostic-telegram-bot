@@ -1,112 +1,123 @@
-import os
-import uuid
-import asyncio
-from datetime import datetime, timedelta
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-from fastapi import FastAPI, Request
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import Update, Message, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.fsm.storage.memory import MemoryStorage
-from dotenv import load_dotenv
-from sqlalchemy import select
+# Ссылки на документы (будут подставляться через переменные окружения на Railway)
+PUBLIC_OFFER_URL = "https://example.com/public_offer"
+PERSONAL_DATA_POLICY_URL = "https://example.com/personal_data_policy"
+AGREEMENTS_FILE_URL = "https://example.com/agreements"
 
-from app.database import engine, AsyncSessionLocal
-from app.models import Base, User, Booking
+# ====== Приветственное сообщение ======
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    username = update.effective_user.first_name
+    text = f"""
+Привет, {username}! Я бот метода
+<b>СОВ — Системы Осознанного Выбора</b>
+Я помогу тебе понять, какие программы сейчас активны в твоей жизни — и как именно они влияют на отношения, самооценку, деньги и решения.
 
-load_dotenv()
+Диагностика займёт 2–3 минуты.
+Здесь главное честность, перед самим собой.
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+<b>📄 Важные документы:</b>
+• <a href="{PUBLIC_OFFER_URL}">Публичная оферта</a>
+• <a href="{PERSONAL_DATA_POLICY_URL}">Согласие на обработку персональных данных</a>
+• <a href="{AGREEMENTS_FILE_URL}">Согласие на получение рекламно-информационных материалов</a>
 
-# Юкасса пока не подключаем
-YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
-YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
-PAYMENT_RETURN_URL = os.getenv("PAYMENT_RETURN_URL", "https://t.me/ТВОЙ_БОТ")
+<b>Готов(-а) начать?</b>
+"""
+    keyboard = [
+        [InlineKeyboardButton("Начать диагностику", callback_data="start_diag")],
+        [InlineKeyboardButton("О методе СОВ", callback_data="about_method")],
+        [InlineKeyboardButton("Условия и документы", callback_data="docs")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML", disable_web_page_preview=True)
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
-app = FastAPI()
+# ====== Сообщение о методе СОВ ======
+async def about_method_text():
+    text = f"""
+📚 <b>О методе СОВ — Системы Осознанного Выбора</b>
 
+<b>Что такое СОВ?</b>
+СОВ — это системный подход, который соединяет психологию и механизмы выбора. Он помогает понять, какие программы управляют вашими решениями в жизни.
 
-@app.on_event("startup")
-async def on_startup():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+<b>Основные принципы метода:</b>
+• <b>Системность</b> — рассматривает психику как целостную систему
+• <b>Осознанность</b> — помогает увидеть автоматические реакции
+• <b>Выбор</b> — учит делать осознанные решения вместо автоматических реакций
 
+<b>Что такое «программы»?</b>
+Программы — это глубинные схемы поведения, которые:
+• Формируются в детстве, передаются от родителей
+• Работают автоматически
+• Влияют на отношения, карьеру, финансы
+• Часто приводят к повторяющимся сценариям и кризисам
 
-# ---------------- START ----------------
-@dp.message(F.text == "/start")
-async def start_handler(message: Message):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Записаться на консультацию", callback_data="book_consult")]
-    ])
-    await message.answer("Выберите действие:", reply_markup=keyboard)
+<b>Как работает диагностика?</b>
+1. Вы отвечаете на вопросы
+2. Система анализирует ваши ответы
+3. Выявляет 3 ведущие программы
+4. Дает понимание их влияния на жизнь
 
+<b>Что вы получите после диагностики?</b>
+• Понимание своих ведущих программ
+• Осознание, как они влияют на вашу жизнь
+• Направление для дальнейшего развития
 
-# ---------------- CREATE BOOKING ----------------
-@dp.callback_query(F.data == "book_consult")
-async def create_booking(callback):
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(User).where(User.telegram_id == callback.from_user.id)
+<b>📄 Важные документы:</b>
+• <a href="{PUBLIC_OFFER_URL}">Публичная оферта</a>
+• <a href="{PERSONAL_DATA_POLICY_URL}">Согласие на обработку персональных данных</a>
+• <a href="{AGREEMENTS_FILE_URL}">Согласие на получение рекламно-информационных материалов</a>
+
+<b>Готовы начать диагностику?</b>
+"""
+    return text
+
+# ====== Обработка кнопок ======
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "start_diag":
+        keyboard = [
+            [InlineKeyboardButton("Я согласен(а)", callback_data="agree")],
+            [InlineKeyboardButton("Ознакомиться с условиями", callback_data="read_docs")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            f"Перед началом диагностики нужно дать согласие на условия. Ознакомьтесь с перечнем документов ниже.", 
+            reply_markup=reply_markup
         )
-        user = result.scalar_one_or_none()
-
-        if not user:
-            user = User(
-                telegram_id=callback.from_user.id,
-                username=callback.from_user.username
-            )
-            session.add(user)
-            await session.commit()
-
-        booking = Booking(
-            user_id=user.id,
-            date=datetime.utcnow().date(),
-            start_time=datetime.utcnow().time(),
-            end_time=(datetime.utcnow() + timedelta(hours=1)).time(),
-            status="pending"
+        
+    elif query.data == "agree":
+        await query.edit_message_text("Отлично, начинаем диагностику!")
+        # Тут можно запускать функцию с самим опросом
+        
+    elif query.data == "read_docs":
+        await query.edit_message_text(
+            f"Вот ссылки на документы:\n• <a href='{PUBLIC_OFFER_URL}'>Публичная оферта</a>\n• <a href='{PERSONAL_DATA_POLICY_URL}'>Согласие на обработку персональных данных</a>\n• <a href='{AGREEMENTS_FILE_URL}'>Согласие на получение рекламно-информационных материалов</a>",
+            parse_mode="HTML"
         )
+        
+    elif query.data == "about_method":
+        text = await about_method_text()
+        keyboard = [[InlineKeyboardButton("Начать диагностику", callback_data="start_diag")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=reply_markup)
+        
+    elif query.data == "docs":
+        text = f"Вот ссылки на условия и документы:\n• <a href='{PUBLIC_OFFER_URL}'>Публичная оферта</a>\n• <a href='{PERSONAL_DATA_POLICY_URL}'>Согласие на обработку персональных данных</a>\n• <a href='{AGREEMENTS_FILE_URL}'>Согласие на получение рекламно-информационных материалов</a>"
+        keyboard = [[InlineKeyboardButton("Начать диагностику", callback_data="start_diag")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=reply_markup)
 
-        session.add(booking)
-        await session.commit()
-        await session.refresh(booking)
-
-        # ---------------- Информация о брони ----------------
-        await callback.message.answer(
-            "Бронь создана. Оплата будет доступна после подключения Юкасса."
-        )
-
-    # ---------------- Таймер 15 минут ----------------
-    async def cancel_booking_if_not_paid(booking_id: int):
-        await asyncio.sleep(900)  # 15 минут
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(Booking).where(Booking.id == booking_id)
-            )
-            booking_to_check = result.scalar_one_or_none()
-            if booking_to_check and booking_to_check.status == "pending":
-                booking_to_check.status = "cancelled"
-                await session.commit()
-                try:
-                    await bot.send_message(
-                        booking_to_check.user.telegram_id,
-                        "Время на оплату истекло ⏰ Ваша бронь была отменена."
-                    )
-                except:
-                    pass
-
-    asyncio.create_task(cancel_booking_if_not_paid(booking.id))
-
-
-# ---------------- TELEGRAM WEBHOOK ----------------
-@app.post("/webhook")
-async def webhook(request: Request):
-    update = Update.model_validate(await request.json(), context={"bot": bot})
-    await dp.feed_update(bot, update)
-    return {"ok": True}
-
-
-@app.get("/")
-async def root():
-    return {"status": "Bot is running"}
+# ====== Запуск бота ======
+if __name__ == "__main__":
+    import os
+    TOKEN = os.getenv("BOT_TOKEN")  # В Railway передаем через переменные окружения
+    app = ApplicationBuilder().token(TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    
+    print("Бот запущен...")
+    app.run_polling()
