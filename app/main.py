@@ -88,22 +88,21 @@ async def create_booking(callback):
 
 # ---------------- YOOKASSA PAYMENT ----------------
 
+from yookassa import Payment, Configuration
+import uuid
+import os
+
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
+PAYMENT_RETURN_URL = "https://t.me/ТВОЙ_БОТ"  # замени на ссылку своего бота
+
+Configuration.account_id = YOOKASSA_SHOP_ID
+Configuration.secret_key = YOOKASSA_SECRET_KEY
+
 def create_yookassa_payment(booking_id: int, amount: int):
-    url = "https://api.yookassa.ru/v3/payments"
-
-    auth = base64.b64encode(
-        f"{YOOKASSA_SHOP_ID}:{YOOKASSA_SECRET_KEY}".encode()
-    ).decode()
-
-    headers = {
-        "Authorization": f"Basic {auth}",
-        "Idempotence-Key": str(uuid.uuid4()),
-        "Content-Type": "application/json"
-    }
-
-    data = {
+    payment = Payment.create({
         "amount": {
-            "value": f"{amount}.00",
+            "value": str(amount),
             "currency": "RUB"
         },
         "confirmation": {
@@ -111,16 +110,14 @@ def create_yookassa_payment(booking_id: int, amount: int):
             "return_url": PAYMENT_RETURN_URL
         },
         "capture": True,
-        "description": f"Booking #{booking_id}",
-        "metadata": {
-            "booking_id": booking_id
-        }
-    }
+        "description": f"Booking #{booking_id}"
+    }, str(uuid.uuid4()))
 
-    response = requests.post(url, json=data, headers=headers)
-    payment = response.json()
+    if not hasattr(payment, "confirmation"):
+        print("YOOKASSA ERROR:", payment)
+        raise Exception("Ошибка создания платежа")
 
-    return payment["confirmation"]["confirmation_url"]
+    return payment.confirmation.confirmation_url
 
 
 # ---------------- YOOKASSA WEBHOOK ----------------
